@@ -182,6 +182,9 @@
 
     // Auto-run once on load
     runChecks();
+
+    // Auto-run every 60 seconds
+    setinterval(runChecks, 60 *1000); 
   </script>
 </body>
 </html>
