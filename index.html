@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>IP Ping Status</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      max-width: 900px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+    }
+    h1 { margin-bottom: 0.5rem; }
+    p { margin-top: 0; color: #555; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1rem;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 0.5rem;
+      text-align: left;
+      font-size: 0.9rem;
+    }
+    th {
+      background: #f5f5f5;
+    }
+
+    .status-up {
+      color: #0a0;
+      font-weight: 600;
+    }
+    .status-down {
+      color: #c00;
+      font-weight: 600;
+    }
+    .status-checking {
+      color: #888;
+    }
+
+    button {
+      margin-top: 1rem;
+      padding: 0.5rem 1rem;
+      border: 1px solid #ccc;
+      background: #f5f5f5;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    button:active {
+      transform: translateY(1px);
+    }
+  </style>
+</head>
+<body>
+  <h1>IP Ping Status</h1>
+  <p>
+    This checks whether the browser can reach each IP via HTTPS (HTTP “ping”, not ICMP).
+  </p>
+
+  <p>Last run: <span id="last-run">Never</span></p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>URL (IP)</th>
+        <th>Status</th>
+        <th>Latency (ms)</th>
+        <th>Last Checked</th>
+      </tr>
+    </thead>
+    <tbody id="status-body">
+      <!-- Filled by JS -->
+    </tbody>
+  </table>
+
+  <button id="refresh-btn">Run Check</button>
+
+  <script>
+    // ---- CONFIG: Put your IP URLs here ----
+    const targets = [
+      { name: "Cloudflare DNS", url: "https://1.1.1.1" },
+      { name: "Google DNS", url: "https://8.8.8.8" },
+      { name: "DET Ref Cam", url: "http://10.110.40.60/live/index.html" },
+      { name: "DET Home IVR 1", url: "https://10.110.44.201/canvas"},
+      { name: "DET Locker Room Antenna", url "http://10.110.40.65/nodes_view"},
+      // Add more:
+      // { name: "My Server", url: "https://123.123.123.123" },
+    ];
+    // ---------------------------------------
+
+    const tbody = document.getElementById("status-body");
+    const lastRunEl = document.getElementById("last-run");
+    const refreshBtn = document.getElementById("refresh-btn");
+
+    function renderInitialRows() {
+      tbody.innerHTML = "";
+      for (const t of targets) {
+        const tr = document.createElement("tr");
+        tr.dataset.url = t.url;
+        tr.innerHTML = `
+          <td>${t.name}</td>
+          <td>${t.url}</td>
+          <td class="status status-checking">Not checked</td>
+          <td class="latency">-</td>
+          <td class="checked-at">-</td>
+        `;
+        tbody.appendChild(tr);
+      }
+    }
+
+    async function checkTarget(target) {
+      const start = performance.now();
+      let ok = false;
+      let latency = null;
+
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+
+        // no-cors => we can't read status, but success vs throw still tells us something
+        await fetch(target.url, {
+          method: "GET",
+          mode: "no-cors",
+          signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+        ok = true;
+        latency = Math.round(performance.now() - start);
+      } catch (e) {
+        ok = false;
+        latency = null;
+      }
+
+      return {
+        ...target,
+        up: ok,
+        latency,
+        checkedAt: new Date()
+      };
+    }
+
+    async function runChecks() {
+      refreshBtn.disabled = true;
+      refreshBtn.textContent = "Checking...";
+
+      const promises = targets.map(checkTarget);
+      const results = await Promise.all(promises);
+
+      const now = new Date();
+      lastRunEl.textContent = now.toLocaleString();
+
+      for (const result of results) {
+        const row = [...tbody.rows].find(r => r.dataset.url === result.url);
+        if (!row) continue;
+
+        const statusCell = row.querySelector(".status");
+        const latencyCell = row.querySelector(".latency");
+        const checkedAtCell = row.querySelector(".checked-at");
+
+        if (result.up) {
+          statusCell.textContent = "UP";
+          statusCell.className = "status status-up";
+          latencyCell.textContent = result.latency ?? "-";
+        } else {
+          statusCell.textContent = "DOWN / Unreachable";
+          statusCell.className = "status status-down";
+          latencyCell.textContent = "-";
+        }
+
+        checkedAtCell.textContent = result.checkedAt.toLocaleTimeString();
+      }
+
+      refreshBtn.disabled = false;
+      refreshBtn.textContent = "Run Check";
+    }
+
+    renderInitialRows();
+    refreshBtn.addEventListener("click", runChecks);
+
+    // Auto-run once on load
+    runChecks();
+  </script>
+</body>
+</html>
